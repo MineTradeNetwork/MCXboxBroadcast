@@ -248,8 +248,11 @@ public class FriendManager {
 
                     // Check if the person is a friend
                     if (!person.isFollowingCaller && !person.isFollowedByCaller) {
-                        // Remove the person as they are not a friend
-                        remove(person.xuid, person.displayName);
+                        continue;
+                    }
+
+                    // Check if the person is already on the to remove list
+                    if (toRemove.containsKey(person.xuid)) {
                         continue;
                     }
 
