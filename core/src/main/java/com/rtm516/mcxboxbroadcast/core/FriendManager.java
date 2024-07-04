@@ -14,6 +14,8 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -256,17 +258,27 @@ public class FriendManager {
                         continue;
                     }
 
+                    Date addedDateTimeUtc = person.addedDateTimeUtc;
+                    if (addedDateTimeUtc == null) {
+                        continue;
+                    }
+
+                    // Ensure player has been added for atleast 24 hours
+                    Instant addedInstant = addedDateTimeUtc.toInstant();
+                    Instant currentInstant = Instant.now();
+                    if (currentInstant.minusSeconds(24 * 60 * 60).isBefore(addedInstant)) {
+                        continue;
+                    }
+
                     Date lastSeenDateTimeUtc = person.lastSeenDateTimeUtc;
                     if (lastSeenDateTimeUtc == null) {
                         continue;
                     }
 
                     int maxInactiveDays = friendSyncConfig.autoRemove().inactiveDays();
-                    long lastSeen = lastSeenDateTimeUtc.getTime();
-                    long currentTime = System.currentTimeMillis();
-                    long inactiveTime = currentTime - lastSeen;
-
-                    if (inactiveTime <= (long) maxInactiveDays * 24 * 60 * 60 * 1000) {
+                    Instant lastSeenInstant = lastSeenDateTimeUtc.toInstant();
+                    // Ensure player has been inactive for the specified number of days
+                    if (lastSeenInstant.plus(maxInactiveDays, ChronoUnit.DAYS).isAfter(currentInstant)) {
                         continue;
                     }
 
