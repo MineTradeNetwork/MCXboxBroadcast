@@ -7,21 +7,19 @@ import com.rtm516.mcxboxbroadcast.core.models.friend.BlockRequest;
 import com.rtm516.mcxboxbroadcast.core.models.friend.FriendModifyResponse;
 import com.rtm516.mcxboxbroadcast.core.models.friend.FriendStatusResponse;
 import com.rtm516.mcxboxbroadcast.core.models.session.FollowerResponse;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 public class FriendManager {
+    private static final org.slf4j.Logger log = LoggerFactory.getLogger(FriendManager.class);
     private final HttpClient httpClient;
     private final Logger logger;
     private final SessionManagerCore sessionManager;
@@ -52,12 +50,12 @@ public class FriendManager {
 
         // Create the request for getting the people following us and friends
         HttpRequest xboxFollowersRequest = HttpRequest.newBuilder()
-            .uri(Constants.FOLLOWERS)
-            .header("Authorization", sessionManager.getTokenHeader())
-            .header("x-xbl-contract-version", "5")
-            .header("accept-language", "en-GB")
-            .GET()
-            .build();
+                .uri(Constants.FOLLOWERS)
+                .header("Authorization", sessionManager.getTokenHeader())
+                .header("x-xbl-contract-version", "5")
+                .header("accept-language", "en-GB")
+                .GET()
+                .build();
 
         String lastResponse = "";
         try {
@@ -73,7 +71,7 @@ public class FriendManager {
                 for (FollowerResponse.Person person : xboxFollowerResponse.people) {
                     // Make sure they are full friends
                     if ((person.isFollowedByCaller && person.isFollowingCaller)
-                        || (includeFollowing && person.isFollowingCaller)) {
+                            || (includeFollowing && person.isFollowingCaller)) {
                         people.add(person);
                     }
                 }
@@ -86,12 +84,12 @@ public class FriendManager {
         if (includeFollowedBy) {
             // Create the request for getting the people we are following and friends
             HttpRequest xboxSocialRequest = HttpRequest.newBuilder()
-                .uri(Constants.SOCIAL)
-                .header("Authorization", sessionManager.getTokenHeader())
-                .header("x-xbl-contract-version", "5")
-                .header("accept-language", "en-GB")
-                .GET()
-                .build();
+                    .uri(Constants.SOCIAL)
+                    .header("Authorization", sessionManager.getTokenHeader())
+                    .header("x-xbl-contract-version", "5")
+                    .header("accept-language", "en-GB")
+                    .GET()
+                    .build();
 
             try {
                 // Get the list of people we are following from the api
@@ -129,7 +127,7 @@ public class FriendManager {
     /**
      * Add a friend from xbox live
      *
-     * @param xuid The XUID of the friend to add
+     * @param xuid     The XUID of the friend to add
      * @param gamertag The gamertag of the friend to add
      */
     public void add(String xuid, String gamertag) {
@@ -146,7 +144,7 @@ public class FriendManager {
     /**
      * Add a friend from xbox live if they aren't already a friend
      *
-     * @param xuid The XUID of the friend to add
+     * @param xuid     The XUID of the friend to add
      * @param gamertag The gamertag of the friend to add
      * @return True if the friend was added, false if they are already a friend
      */
@@ -158,10 +156,10 @@ public class FriendManager {
 
         // Check if we are already friends
         HttpRequest xboxFriendStatus = HttpRequest.newBuilder()
-            .uri(URI.create(Constants.PEOPLE.formatted(xuid)))
-            .header("Authorization", sessionManager.getTokenHeader())
-            .GET()
-            .build();
+                .uri(URI.create(Constants.PEOPLE.formatted(xuid)))
+                .header("Authorization", sessionManager.getTokenHeader())
+                .GET()
+                .build();
 
         try {
             HttpResponse<String> response = httpClient.send(xboxFriendStatus, HttpResponse.BodyHandlers.ofString());
@@ -182,7 +180,7 @@ public class FriendManager {
     /**
      * Remove a friend from xbox live
      *
-     * @param xuid The XUID of the friend to remove
+     * @param xuid     The XUID of the friend to remove
      * @param gamertag The gamertag of the friend to remove
      */
     public void remove(String xuid, String gamertag) {
@@ -230,6 +228,55 @@ public class FriendManager {
     }
 
     /**
+     * Set up a scheduled task to automatically remove friends
+     *
+     * @param friendSyncConfig The config to use for the auto friend sync
+     */
+    public void initAutoRemoveFriend(FriendSyncConfig friendSyncConfig) {
+        if (!friendSyncConfig.autoRemove().enabled()) {
+            return;
+        }
+
+        this.sessionManager.scheduledThread().scheduleWithFixedDelay(() -> {
+            try {
+                List<FollowerResponse.Person> people = get();
+                for (FollowerResponse.Person person : people) {
+                    // Make sure we are not targeting a subaccount (eg: split screen)
+                    if (isSubAccount(person.xuid)) {
+                        continue;
+                    }
+
+                    // Check if the person is a friend
+                    if (!person.isFollowingCaller && !person.isFollowedByCaller) {
+                        // Remove the person as they are not a friend
+                        remove(person.xuid, person.displayName);
+                        continue;
+                    }
+
+                    Date lastSeenDateTimeUtc = person.lastSeenDateTimeUtc;
+                    if (lastSeenDateTimeUtc == null) {
+                        continue;
+                    }
+
+                    int maxInactiveDays = friendSyncConfig.autoRemove().inactiveDays();
+                    long lastSeen = lastSeenDateTimeUtc.getTime();
+                    long currentTime = System.currentTimeMillis();
+                    long inactiveTime = currentTime - lastSeen;
+
+                    if (inactiveTime <= (long) maxInactiveDays * 24 * 60 * 60 * 1000) {
+                        continue;
+                    }
+
+                    // Remove the person as they are inactive
+                    remove(person.xuid, person.displayName);
+                }
+            } catch (Exception ex) {
+                this.logger.error("Failed to auto remove friends", ex);
+            }
+        }, friendSyncConfig.updateInterval(), friendSyncConfig.updateInterval(), TimeUnit.SECONDS);
+    }
+
+    /**
      * Internal function to check if the XUID is a subaccount (used by split screen)
      *
      * @return True if the XUID is a sub account
@@ -269,10 +316,10 @@ public class FriendManager {
                 for (Map.Entry<String, String> entry : toProcess.entrySet()) {
                     // Create the request for adding the friend
                     HttpRequest xboxFriendRequest = HttpRequest.newBuilder()
-                        .uri(URI.create(Constants.PEOPLE.formatted(entry.getKey())))
-                        .header("Authorization", sessionManager.getTokenHeader())
-                        .PUT(HttpRequest.BodyPublishers.noBody())
-                        .build();
+                            .uri(URI.create(Constants.PEOPLE.formatted(entry.getKey())))
+                            .header("Authorization", sessionManager.getTokenHeader())
+                            .PUT(HttpRequest.BodyPublishers.noBody())
+                            .build();
 
                     try {
                         HttpResponse<String> response = httpClient.send(xboxFriendRequest, HttpResponse.BodyHandlers.ofString());
@@ -340,10 +387,10 @@ public class FriendManager {
                 for (Map.Entry<String, String> entry : toProcess.entrySet()) {
                     // Create the request for removing the friend
                     HttpRequest xboxFriendRequest = HttpRequest.newBuilder()
-                        .uri(URI.create(Constants.PEOPLE.formatted(entry.getKey())))
-                        .header("Authorization", sessionManager.getTokenHeader())
-                        .DELETE()
-                        .build();
+                            .uri(URI.create(Constants.PEOPLE.formatted(entry.getKey())))
+                            .header("Authorization", sessionManager.getTokenHeader())
+                            .DELETE()
+                            .build();
 
                     try {
                         HttpResponse<String> response = httpClient.send(xboxFriendRequest, HttpResponse.BodyHandlers.ofString());
@@ -390,10 +437,10 @@ public class FriendManager {
      */
     public void forceUnfollow(String xuid) {
         HttpRequest blockRequest = HttpRequest.newBuilder()
-            .uri(Constants.BLOCK)
-            .header("Authorization", sessionManager.getTokenHeader())
-            .PUT(HttpRequest.BodyPublishers.ofString(Constants.GSON.toJson(new BlockRequest(xuid))))
-            .build();
+                .uri(Constants.BLOCK)
+                .header("Authorization", sessionManager.getTokenHeader())
+                .PUT(HttpRequest.BodyPublishers.ofString(Constants.GSON.toJson(new BlockRequest(xuid))))
+                .build();
 
         try {
             HttpResponse<Void> blockResponse = httpClient.send(blockRequest, HttpResponse.BodyHandlers.discarding());
@@ -402,10 +449,10 @@ public class FriendManager {
             }
 
             HttpRequest unblockRequest = HttpRequest.newBuilder()
-                .uri(Constants.BLOCK)
-                .header("Authorization", sessionManager.getTokenHeader())
-                .method("DELETE", HttpRequest.BodyPublishers.ofString(Constants.GSON.toJson(new BlockRequest(xuid))))
-                .build();
+                    .uri(Constants.BLOCK)
+                    .header("Authorization", sessionManager.getTokenHeader())
+                    .method("DELETE", HttpRequest.BodyPublishers.ofString(Constants.GSON.toJson(new BlockRequest(xuid))))
+                    .build();
 
             HttpResponse<Void> unblockResponse = httpClient.send(blockRequest, HttpResponse.BodyHandlers.discarding());
             if (unblockResponse.statusCode() != 200) {

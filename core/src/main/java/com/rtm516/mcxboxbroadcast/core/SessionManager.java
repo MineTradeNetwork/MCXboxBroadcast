@@ -86,6 +86,8 @@ public class SessionManager extends SessionManagerCore {
         // Set up the auto friend sync
         this.friendSyncConfig = friendSyncConfig;
         friendManager().initAutoFriend(friendSyncConfig);
+        // Set up the auto remove friend sync
+        friendManager().initAutoRemoveFriend(friendSyncConfig);
 
         // Load sub-sessions from cache
         List<String> subSessions = new ArrayList<>();
@@ -102,6 +104,9 @@ public class SessionManager extends SessionManagerCore {
                     SubSessionManager subSessionManager = new SubSessionManager(subSession, this, Paths.get(cache, subSession).toString(), logger);
                     subSessionManager.init();
                     subSessionManager.friendManager().initAutoFriend(friendSyncConfig);
+                    // Set up the auto remove friend sync
+                    subSessionManager.friendManager().initAutoRemoveFriend(friendSyncConfig);
+
                     subSessionManagers.put(subSession, subSessionManager);
                 } catch (SessionCreationException | SessionUpdateException e) {
                     logger.error("Failed to create sub-session " + subSession, e);
@@ -213,6 +218,8 @@ public class SessionManager extends SessionManagerCore {
             SubSessionManager subSessionManager = new SubSessionManager(id, this, Paths.get(cache, id).toString(), logger);
             subSessionManager.init();
             subSessionManager.friendManager().initAutoFriend(friendSyncConfig);
+            // Set up the auto remove friend sync
+            subSessionManager.friendManager().initAutoRemoveFriend(friendSyncConfig);
             subSessionManagers.put(id, subSessionManager);
         } catch (SessionCreationException | SessionUpdateException e) {
             coreLogger.error("Failed to create sub-session", e);

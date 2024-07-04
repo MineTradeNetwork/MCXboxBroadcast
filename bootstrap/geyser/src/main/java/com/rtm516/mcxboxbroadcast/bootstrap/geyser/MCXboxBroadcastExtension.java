@@ -201,6 +201,8 @@ public class MCXboxBroadcastExtension implements Extension {
 
         // Set up the auto friend sync
         sessionManager.friendManager().initAutoFriend(config.friendSync());
+        // Set up the auto remove friend sync
+        sessionManager.friendManager().initAutoRemoveFriend(config.friendSync());
 
         // Start the update timer
         sessionManager.scheduledThread().scheduleWithFixedDelay(this::tick, config.updateInterval(), config.updateInterval(), TimeUnit.SECONDS);

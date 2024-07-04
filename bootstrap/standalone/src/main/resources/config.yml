@@ -31,5 +31,12 @@ friend-sync:
   # Should we automatically unfollow people that no longer follow us
   auto-unfollow: true
 
+  # Automatically remove friends after certain conditions are met
+  auto-remove:
+    # Should we automatically remove friends that are not in the friend list
+    enabled: false
+    # The amount of days a friend can be inactive before being removed
+    inactive-days: 2
+
 # Enable debug logs
 debug-log: false
